@@ -1,0 +1,24 @@
+﻿package WABaseORM.FireDAC;
+
+{$R *.res}
+{$IFDEF IMPLICITBUILDING This IFDEF should not be used}
+{$ENDIF IMPLICITBUILDING}
+{$RUNONLY}
+{$DESCRIPTION 'WABaseORM - Provider FireDAC (implementação concreta das interfaces do Core)'}
+{$LIBSUFFIX AUTO}
+{$IMPLICITBUILD ON}
+
+requires
+  rtl,
+  WABaseORM.Core,
+  FireDACCommonDriver,
+  FireDACCommon,
+  FireDAC;
+
+contains
+  WABaseORM.FireDAC.Connection in '..\src\Providers\FireDAC\WABaseORM.FireDAC.Connection.pas',
+  WABaseORM.FireDAC.Query in '..\src\Providers\FireDAC\WABaseORM.FireDAC.Query.pas',
+  WABaseORM.FireDAC.Transaction in '..\src\Providers\FireDAC\WABaseORM.FireDAC.Transaction.pas',
+  WABaseORM.FireDAC.ConnectionFactory in '..\src\Providers\FireDAC\WABaseORM.FireDAC.ConnectionFactory.pas';
+
+end.

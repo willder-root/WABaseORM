@@ -1,0 +1,55 @@
+package WABaseORM;
+
+{$R *.res}
+{$IFDEF IMPLICITBUILDING This IFDEF should not be used by users}
+{$ALIGN 8}
+{$ASSERTIONS ON}
+{$BOOLEVAL OFF}
+{$DEBUGINFO OFF}
+{$EXTENDEDSYNTAX ON}
+{$IMPORTEDDATA ON}
+{$IOCHECKS ON}
+{$LOCALSYMBOLS ON}
+{$LONGSTRINGS ON}
+{$OPENSTRINGS ON}
+{$OPTIMIZATION OFF}
+{$OVERFLOWCHECKS OFF}
+{$RANGECHECKS OFF}
+{$REFERENCEINFO ON}
+{$SAFEDIVIDE OFF}
+{$STACKFRAMES ON}
+{$TYPEDADDRESS OFF}
+{$VARSTRINGCHECKS ON}
+{$WRITEABLECONST OFF}
+{$MINENUMSIZE 1}
+{$IMAGEBASE $400000}
+{$DEFINE DEBUG}
+{$ENDIF IMPLICITBUILDING}
+{$IMPLICITBUILD ON}
+
+requires
+  rtl,
+  dbrtl,
+  FireDAC,
+  FireDACCommonDriver,
+  FireDACCommon,
+  FireDACIBDriver;
+
+contains
+  WABaseORM.Types in 'src\Common\WABaseORM.Types.pas',
+  WABaseORM.Utils in 'src\Common\WABaseORM.Utils.pas',
+  WABaseORM.Attributes in 'src\Core\WABaseORM.Attributes.pas',
+  WABaseORM.DB.Interfaces in 'src\Core\WABaseORM.DB.Interfaces.pas',
+  WABaseORM.Exceptions in 'src\Core\WABaseORM.Exceptions.pas',
+  WABaseORM.Interfaces in 'src\Core\WABaseORM.Interfaces.pas',
+  WABaseORM.Mapper in 'src\ORM\WABaseORM.Mapper.pas',
+  WABaseORM.QueryBuilder in 'src\ORM\WABaseORM.QueryBuilder.pas',
+  WABaseORM.Repository in 'src\ORM\WABaseORM.Repository.pas',
+  WABaseORM.RttiCache in 'src\ORM\WABaseORM.RttiCache.pas',
+  WABaseORM.UnitOfWork in 'src\ORM\WABaseORM.UnitOfWork.pas',
+  WABaseORM.FireDAC.Connection in 'src\Providers\FireDAC\WABaseORM.FireDAC.Connection.pas',
+  WABaseORM.FireDAC.ConnectionFactory in 'src\Providers\FireDAC\WABaseORM.FireDAC.ConnectionFactory.pas',
+  WABaseORM.FireDAC.Query in 'src\Providers\FireDAC\WABaseORM.FireDAC.Query.pas',
+  WABaseORM.FireDAC.Transaction in 'src\Providers\FireDAC\WABaseORM.FireDAC.Transaction.pas';
+
+end.

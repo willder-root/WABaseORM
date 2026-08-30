@@ -1,0 +1,26 @@
+﻿package WABaseORM.Core;
+
+{$R *.res}
+{$IFDEF IMPLICITBUILDING This IFDEF should not be used}
+{$ENDIF IMPLICITBUILDING}
+{$RUNONLY}
+{$DESCRIPTION 'WABaseORM - Core (interfaces + mapeamento RTTI, sem dependência de FireDAC)'}
+{$IMPLICITBUILD ON}
+
+requires
+  rtl;
+
+contains
+  WABaseORM.DB.Interfaces in '..\src\Core\WABaseORM.DB.Interfaces.pas',
+  WABaseORM.Attributes in '..\src\Core\WABaseORM.Attributes.pas',
+  WABaseORM.Interfaces in '..\src\Core\WABaseORM.Interfaces.pas',
+  WABaseORM.Exceptions in '..\src\Core\WABaseORM.Exceptions.pas',
+  WABaseORM.RttiCache in '..\src\ORM\WABaseORM.RttiCache.pas',
+  WABaseORM.Mapper in '..\src\ORM\WABaseORM.Mapper.pas',
+  WABaseORM.QueryBuilder in '..\src\ORM\WABaseORM.QueryBuilder.pas',
+  WABaseORM.Repository in '..\src\ORM\WABaseORM.Repository.pas',
+  WABaseORM.UnitOfWork in '..\src\ORM\WABaseORM.UnitOfWork.pas',
+  WABaseORM.Types in '..\src\Common\WABaseORM.Types.pas',
+  WABaseORM.Utils in '..\src\Common\WABaseORM.Utils.pas';
+
+end.
