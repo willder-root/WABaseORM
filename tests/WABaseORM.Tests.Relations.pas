@@ -13,7 +13,8 @@ type
   TPedidoFixture = class;
 
   // Testes de INTEGRAÇÃO — usam um banco SQLite em memória para validar o carregamento
-  // de relacionamentos HasMany/BelongsTo de ponta a ponta (RTTI + SQL + FireDAC).
+  // de relacionamentos HasMany/BelongsTo via JOIN (uma única consulta) de ponta a ponta
+  // (RTTI + SQL + FireDAC).
   [WABaseORMTableAttribute('CLIENTES')]
   TClienteFixture = class
   private
@@ -27,6 +28,8 @@ type
     property Nome: string read FNome write FNome;
     [WABaseORMHasManyAttribute('CLIENTE_ID')]
     property Pedidos: TObjectList<TPedidoFixture> read FPedidos write FPedidos;
+  public
+    destructor Destroy; override;
   end;
 
   [WABaseORMTableAttribute('PEDIDOS')]
@@ -45,6 +48,8 @@ type
     property Descricao: string read FDescricao write FDescricao;
     [WABaseORMBelongsToAttribute('CLIENTE_ID')]
     property Cliente: TClienteFixture read FCliente write FCliente;
+  public
+    destructor Destroy; override;
   end;
 
   [TestFixture]
@@ -60,14 +65,34 @@ type
     procedure TearDown;
 
     [Test]
-    procedure LoadHasMany_DeveCarregarFilhosPelaFK;
+    procedure FindByIDWithHasMany_DeveCarregarClienteEFilhosEmUmaUnicaQuery;
     [Test]
-    procedure LoadBelongsTo_DeveCarregarPaiPelaFK;
+    procedure FindByIDWithHasMany_SemFilhos_DeveRetornarClienteComListaVazia;
     [Test]
-    procedure LoadBelongsTo_SemRegistroPai_DeveRetornarNil;
+    procedure FindByIDWithHasMany_IdInexistente_DeveRetornarNil;
+    [Test]
+    procedure FindByIDWithBelongsTo_DeveCarregarPedidoEClienteEmUmaUnicaQuery;
+    [Test]
+    procedure FindByIDWithBelongsTo_SemRegistroPai_DevePopularApenasOPrincipal;
   end;
 
 implementation
+
+{ TClienteFixture }
+
+destructor TClienteFixture.Destroy;
+begin
+  FPedidos.Free;
+  inherited;
+end;
+
+{ TPedidoFixture }
+
+destructor TPedidoFixture.Destroy;
+begin
+  FCliente.Free;
+  inherited;
+end;
 
 { TWABaseORMRelationsTests }
 
@@ -99,11 +124,10 @@ begin
   FConnection := nil;
 end;
 
-procedure TWABaseORMRelationsTests.LoadHasMany_DeveCarregarFilhosPelaFK;
+procedure TWABaseORMRelationsTests.FindByIDWithHasMany_DeveCarregarClienteEFilhosEmUmaUnicaQuery;
 var
   Cliente: TClienteFixture;
   Pedido: TPedidoFixture;
-  Pedidos: TObjectList<TPedidoFixture>;
 begin
   Cliente := TClienteFixture.Create;
   try
@@ -134,26 +158,56 @@ begin
     Pedido.Free;
   end;
 
-  Cliente := FClienteRepo.FindByID(1);
+  // Uma única chamada = uma única query (LEFT JOIN CLIENTES x PEDIDOS), sem round-trip
+  // separado para buscar o cliente e depois os pedidos.
+  Cliente := FClienteRepo.FindByIDWithHasMany<TPedidoFixture>(1, 'Pedidos');
   try
-    Pedidos := FClienteRepo.LoadHasMany<TPedidoFixture>(Cliente, 'Pedidos');
-    try
-      Assert.AreEqual(2, Pedidos.Count);
-      Assert.IsTrue(Assigned(Cliente.Pedidos), 'A propriedade Pedidos deveria ter sido populada automaticamente');
-      Assert.AreEqual(2, Cliente.Pedidos.Count);
-    finally
-      Pedidos.Free;
-    end;
+    Assert.IsTrue(Assigned(Cliente));
+    Assert.AreEqual('Joao', Cliente.Nome);
+    Assert.IsTrue(Assigned(Cliente.Pedidos));
+    Assert.AreEqual(2, Cliente.Pedidos.Count);
   finally
     Cliente.Free;
   end;
 end;
 
-procedure TWABaseORMRelationsTests.LoadBelongsTo_DeveCarregarPaiPelaFK;
+procedure TWABaseORMRelationsTests.FindByIDWithHasMany_SemFilhos_DeveRetornarClienteComListaVazia;
+var
+  Cliente: TClienteFixture;
+begin
+  Cliente := TClienteFixture.Create;
+  try
+    Cliente.Id := 2;
+    Cliente.Nome := 'Maria';
+    FClienteRepo.Insert(Cliente);
+  finally
+    Cliente.Free;
+  end;
+
+  // LEFT JOIN: mesmo sem nenhum pedido, o cliente precisa ser retornado (um INNER JOIN
+  // teria eliminado a linha do cliente por falta de correspondência).
+  Cliente := FClienteRepo.FindByIDWithHasMany<TPedidoFixture>(2, 'Pedidos');
+  try
+    Assert.IsTrue(Assigned(Cliente));
+    Assert.IsTrue(Assigned(Cliente.Pedidos));
+    Assert.AreEqual(0, Cliente.Pedidos.Count);
+  finally
+    Cliente.Free;
+  end;
+end;
+
+procedure TWABaseORMRelationsTests.FindByIDWithHasMany_IdInexistente_DeveRetornarNil;
+var
+  Cliente: TClienteFixture;
+begin
+  Cliente := FClienteRepo.FindByIDWithHasMany<TPedidoFixture>(999, 'Pedidos');
+  Assert.IsFalse(Assigned(Cliente));
+end;
+
+procedure TWABaseORMRelationsTests.FindByIDWithBelongsTo_DeveCarregarPedidoEClienteEmUmaUnicaQuery;
 var
   Cliente: TClienteFixture;
   Pedido: TPedidoFixture;
-  ClientePai: TClienteFixture;
 begin
   Cliente := TClienteFixture.Create;
   try
@@ -174,26 +228,21 @@ begin
     Pedido.Free;
   end;
 
-  Pedido := FPedidoRepo.FindByID(100);
+  Pedido := FPedidoRepo.FindByIDWithBelongsTo<TClienteFixture>(100, 'Cliente');
   try
-    ClientePai := FPedidoRepo.LoadBelongsTo<TClienteFixture>(Pedido, 'Cliente');
-    try
-      Assert.IsTrue(Assigned(ClientePai));
-      Assert.AreEqual(1, ClientePai.Id);
-      Assert.AreEqual('Joao', ClientePai.Nome);
-      Assert.IsTrue(Pedido.Cliente = ClientePai, 'A propriedade Cliente deveria ter sido populada automaticamente');
-    finally
-      ClientePai.Free;
-    end;
+    Assert.IsTrue(Assigned(Pedido));
+    Assert.AreEqual('Pedido A', Pedido.Descricao);
+    Assert.IsTrue(Assigned(Pedido.Cliente), 'A propriedade Cliente deveria ter sido populada automaticamente');
+    Assert.AreEqual(1, Pedido.Cliente.Id);
+    Assert.AreEqual('Joao', Pedido.Cliente.Nome);
   finally
     Pedido.Free;
   end;
 end;
 
-procedure TWABaseORMRelationsTests.LoadBelongsTo_SemRegistroPai_DeveRetornarNil;
+procedure TWABaseORMRelationsTests.FindByIDWithBelongsTo_SemRegistroPai_DevePopularApenasOPrincipal;
 var
   Pedido: TPedidoFixture;
-  ClientePai: TClienteFixture;
 begin
   Pedido := TPedidoFixture.Create;
   try
@@ -205,10 +254,11 @@ begin
     Pedido.Free;
   end;
 
-  Pedido := FPedidoRepo.FindByID(200);
+  // LEFT JOIN: mesmo sem cliente correspondente, o pedido precisa ser retornado.
+  Pedido := FPedidoRepo.FindByIDWithBelongsTo<TClienteFixture>(200, 'Cliente');
   try
-    ClientePai := FPedidoRepo.LoadBelongsTo<TClienteFixture>(Pedido, 'Cliente');
-    Assert.IsFalse(Assigned(ClientePai));
+    Assert.IsTrue(Assigned(Pedido));
+    Assert.IsFalse(Assigned(Pedido.Cliente));
   finally
     Pedido.Free;
   end;
