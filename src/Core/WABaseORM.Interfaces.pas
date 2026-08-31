@@ -16,9 +16,11 @@ type
 
   IWABaseORMRepository<T: class, constructor> = interface
     ['{D3C7C8F4-9E62-4C2F-8E0F-2F2D6B8E4A21}']
-    function FindAll: TObjectList<T>;
+    function FindAll: TObjectList<T>; overload;
+    /// <summary>Igual a FindAll, mas filtrando pela cláusula WHERE em ACondition
+    /// (ex: "NOME = 'Joao'").</summary>
+    function FindAll(const ACondition: string): TObjectList<T>; overload;
     function FindByID(const AId: Integer): T;
-    function FindWhere(const ACondition: string): TObjectList<T>;
     procedure Insert(AObj: T);
     procedure Update(AObj: T);
     procedure Delete(const AId: Integer);

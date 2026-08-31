@@ -12,26 +12,37 @@ type
   private
     FConnection: IWABaseORMConnection;
     FMapper: TWABaseORMMapper<T>;
+    // Carregam o registro/relacionamento propriamente ditos, já com o Kind (HasMany ou
+    // BelongsTo) resolvido por quem chama (FindByID<TRelated>/FindAll<TRelated> abaixo).
+    function LoadByIDHasMany<TChild: class, constructor>(const AId: Integer; const ARelation: TWABaseORMRelationInfo): T;
+    function LoadByIDBelongsTo<TParent: class, constructor>(const AId: Integer; const ARelation: TWABaseORMRelationInfo): T;
+    function LoadWhereHasMany<TChild: class, constructor>(const ACondition: string; const ARelation: TWABaseORMRelationInfo): TObjectList<T>;
+    function LoadWhereBelongsTo<TParent: class, constructor>(const ACondition: string; const ARelation: TWABaseORMRelationInfo): TObjectList<T>;
   public
     constructor Create(AConnection: IWABaseORMConnection);
     destructor Destroy; override;
-    function FindAll: TObjectList<T>;
-    function FindByID(const AId: Integer): T;
-    function FindWhere(const ACondition: string): TObjectList<T>;
+    function FindAll: TObjectList<T>; overload;
+    /// <summary>Igual a FindAll, mas filtrando pela cláusula WHERE em ACondition
+    /// (ex: "NOME = 'Joao'").</summary>
+    function FindAll(const ACondition: string): TObjectList<T>; overload;
+    function FindByID(const AId: Integer): T; overload;
     procedure Insert(AObj: T);
     procedure Update(AObj: T);
     procedure Delete(const AId: Integer);
     /// <summary>Busca o registro de ID AId e, na mesma consulta (LEFT JOIN, uma única
-    /// query), carrega o lado "muitos" do relacionamento 1:N declarado via
-    /// [WABaseORMHasManyAttribute(...)] na propriedade APropertyName, já populando essa
-    /// propriedade (TObjectList&lt;TChild&gt;). Retorna nil se o registro não existir.</summary>
-    function FindByIDWithHasMany<TChild: class, constructor>(const AId: Integer; const APropertyName: string): T;
-    /// <summary>Busca o registro de ID AId e, na mesma consulta (LEFT JOIN, uma única
-    /// query), carrega o lado "um" do relacionamento N:1 declarado via
-    /// [WABaseORMBelongsToAttribute(...)] na propriedade APropertyName, já populando essa
-    /// propriedade (TParent, ou nil se a FK estiver vazia). Retorna nil se o registro não
-    /// existir.</summary>
-    function FindByIDWithBelongsTo<TParent: class, constructor>(const AId: Integer; const APropertyName: string): T;
+    /// query), carrega o relacionamento declarado na propriedade APropertyName, já
+    /// populando essa propriedade. O Kind do relacionamento (HasMany ou BelongsTo) é
+    /// detectado automaticamente a partir do atributo usado na propriedade — quem chama
+    /// não precisa saber qual dos dois foi mapeado, só o tipo do lado relacionado
+    /// (TRelated) e o nome da propriedade. Retorna nil se o registro não existir.</summary>
+    function FindByID<TRelated: class, constructor>(const AId: Integer; const APropertyName: string): T; overload;
+    /// <summary>Igual ao FindAll(ACondition), mas carrega, na mesma consulta (LEFT
+    /// JOIN), o relacionamento declarado na propriedade APropertyName — com o Kind
+    /// (HasMany ou BelongsTo) detectado automaticamente, como em FindByID&lt;TRelated&gt;.
+    /// Como a consulta junta duas tabelas, colunas com o mesmo nome nos dois lados
+    /// (ex: "ID") ficam ambíguas sem qualificação: prefixe ACondition com o alias da
+    /// tabela principal, "M." (ex: "M.ID IN (1, 2)"), quando isso puder ocorrer.</summary>
+    function FindAll<TRelated: class, constructor>(const ACondition: string; const APropertyName: string): TObjectList<T>; overload;
   end;
 
 implementation
@@ -102,7 +113,7 @@ begin
   end;
 end;
 
-function TWABaseORMRepository<T>.FindWhere(const ACondition: string): TObjectList<T>;
+function TWABaseORMRepository<T>.FindAll(const ACondition: string): TObjectList<T>;
 var
   Builder: TWABaseORMQueryBuilder;
   Qry: IWABaseORMQuery;
@@ -196,14 +207,43 @@ begin
   end;
 end;
 
-function TWABaseORMRepository<T>.FindByIDWithHasMany<TChild>(const AId: Integer; const APropertyName: string): T;
+function TWABaseORMRepository<T>.FindByID<TRelated>(const AId: Integer; const APropertyName: string): T;
+var
+  Relation: TWABaseORMRelationInfo;
+begin
+  if not FMapper.FindRelation(APropertyName, Relation) then
+    raise EWABaseORMRelationNotFound.Create(T.ClassName, APropertyName);
+
+  case Relation.Kind of
+    rkHasMany: Result := LoadByIDHasMany<TRelated>(AId, Relation);
+    rkBelongsTo: Result := LoadByIDBelongsTo<TRelated>(AId, Relation);
+  else
+    Result := nil;
+  end;
+end;
+
+function TWABaseORMRepository<T>.FindAll<TRelated>(const ACondition, APropertyName: string): TObjectList<T>;
+var
+  Relation: TWABaseORMRelationInfo;
+begin
+  if not FMapper.FindRelation(APropertyName, Relation) then
+    raise EWABaseORMRelationNotFound.Create(T.ClassName, APropertyName);
+
+  case Relation.Kind of
+    rkHasMany: Result := LoadWhereHasMany<TRelated>(ACondition, Relation);
+    rkBelongsTo: Result := LoadWhereBelongsTo<TRelated>(ACondition, Relation);
+  else
+    Result := TObjectList<T>.Create(True);
+  end;
+end;
+
+function TWABaseORMRepository<T>.LoadByIDHasMany<TChild>(const AId: Integer; const ARelation: TWABaseORMRelationInfo): T;
 const
   MainAlias = 'M';
   ChildAlias = 'C';
   MainPrefix = 'M_';
   ChildPrefix = 'C_';
 var
-  Relation: TWABaseORMRelationInfo;
   ChildMapper: TWABaseORMMapper<TChild>;
   Builder: TWABaseORMQueryBuilder;
   Qry: IWABaseORMQuery;
@@ -214,9 +254,6 @@ var
   Item: TChild;
 begin
   Result := nil;
-
-  if not FMapper.FindRelation(APropertyName, rkHasMany, Relation) then
-    raise EWABaseORMRelationNotFound.Create(T.ClassName, APropertyName);
 
   ChildMapper := TWABaseORMMapper<TChild>.Create;
   try
@@ -235,7 +272,7 @@ begin
           .Alias(MainAlias)
           .Select(Cols.ToArray)
           .LeftJoin(ChildMapper.GetTableName, ChildAlias,
-            Format('%s.%s = %s.%s', [ChildAlias, Relation.ForeignKeyColumn, MainAlias, FMapper.GetPrimaryKeyColumn]))
+            Format('%s.%s = %s.%s', [ChildAlias, ARelation.ForeignKeyColumn, MainAlias, FMapper.GetPrimaryKeyColumn]))
           .Where(Format('%s.%s = :ID', [MainAlias, FMapper.GetPrimaryKeyColumn]))
           .BuildSelect);
       Qry.SetParam('ID', AId);
@@ -261,8 +298,8 @@ begin
         DS.Next;
       end;
 
-      if Assigned(Result) and Assigned(Relation.Prop) then
-        Relation.Prop.SetValue(TObject(Result), TValue.From<TObjectList<TChild>>(Children))
+      if Assigned(Result) and Assigned(ARelation.Prop) then
+        ARelation.Prop.SetValue(TObject(Result), TValue.From<TObjectList<TChild>>(Children))
       else
         Children.Free;
     finally
@@ -274,14 +311,13 @@ begin
   end;
 end;
 
-function TWABaseORMRepository<T>.FindByIDWithBelongsTo<TParent>(const AId: Integer; const APropertyName: string): T;
+function TWABaseORMRepository<T>.LoadByIDBelongsTo<TParent>(const AId: Integer; const ARelation: TWABaseORMRelationInfo): T;
 const
   MainAlias = 'M';
   ParentAlias = 'P';
   MainPrefix = 'M_';
   ParentPrefix = 'P_';
 var
-  Relation: TWABaseORMRelationInfo;
   ParentMapper: TWABaseORMMapper<TParent>;
   Builder: TWABaseORMQueryBuilder;
   Qry: IWABaseORMQuery;
@@ -291,9 +327,6 @@ var
   ParentObj: TParent;
 begin
   Result := nil;
-
-  if not FMapper.FindRelation(APropertyName, rkBelongsTo, Relation) then
-    raise EWABaseORMRelationNotFound.Create(T.ClassName, APropertyName);
 
   ParentMapper := TWABaseORMMapper<TParent>.Create;
   try
@@ -311,7 +344,7 @@ begin
           .Alias(MainAlias)
           .Select(Cols.ToArray)
           .LeftJoin(ParentMapper.GetTableName, ParentAlias,
-            Format('%s.%s = %s.%s', [ParentAlias, ParentMapper.GetPrimaryKeyColumn, MainAlias, Relation.ForeignKeyColumn]))
+            Format('%s.%s = %s.%s', [ParentAlias, ParentMapper.GetPrimaryKeyColumn, MainAlias, ARelation.ForeignKeyColumn]))
           .Where(Format('%s.%s = :ID', [MainAlias, FMapper.GetPrimaryKeyColumn]))
           .BuildSelect);
       Qry.SetParam('ID', AId);
@@ -327,9 +360,158 @@ begin
         begin
           ParentObj := TParent.Create;
           ParentMapper.MapRowToObject(DS, ParentObj, ParentPrefix);
-          if Assigned(Relation.Prop) then
-            Relation.Prop.SetValue(TObject(Result), TValue.From<TParent>(ParentObj));
+          if Assigned(ARelation.Prop) then
+            ARelation.Prop.SetValue(TObject(Result), TValue.From<TParent>(ParentObj))
+          else
+            ParentObj.Free;
         end;
+      end;
+    finally
+      Builder.Free;
+      Cols.Free;
+    end;
+  finally
+    ParentMapper.Free;
+  end;
+end;
+
+function TWABaseORMRepository<T>.LoadWhereHasMany<TChild>(const ACondition: string; const ARelation: TWABaseORMRelationInfo): TObjectList<T>;
+const
+  MainAlias = 'M';
+  ChildAlias = 'C';
+  MainPrefix = 'M_';
+  ChildPrefix = 'C_';
+var
+  ChildMapper: TWABaseORMMapper<TChild>;
+  Builder: TWABaseORMQueryBuilder;
+  Qry: IWABaseORMQuery;
+  DS: TDataSet;
+  Cols: TList<string>;
+  Index: TDictionary<string, T>;
+  MainPKField, ChildPKField, MainKey: string;
+  MainObj: T;
+  Children: TObjectList<TChild>;
+  Item: TChild;
+begin
+  Result := TObjectList<T>.Create(True);
+
+  ChildMapper := TWABaseORMMapper<TChild>.Create;
+  try
+    Cols := TList<string>.Create;
+    Index := TDictionary<string, T>.Create;
+    Builder := TWABaseORMQueryBuilder.Create(FMapper.GetTableName);
+    try
+      Cols.AddRange(FMapper.GetAliasedSelectColumns(MainAlias, MainPrefix));
+      Cols.AddRange(ChildMapper.GetAliasedSelectColumns(ChildAlias, ChildPrefix));
+
+      // LEFT JOIN: cada registro principal aparece em 1 linha por filho (ou 1 linha só,
+      // com os campos do filho em NULL, quando não há nenhum). As linhas do mesmo
+      // registro principal são agrupadas abaixo por PK (Index), então nem precisam vir
+      // contíguas.
+      Qry := FConnection.CreateQuery;
+      Qry.SetSQL(
+        Builder
+          .Alias(MainAlias)
+          .Select(Cols.ToArray)
+          .LeftJoin(ChildMapper.GetTableName, ChildAlias,
+            Format('%s.%s = %s.%s', [ChildAlias, ARelation.ForeignKeyColumn, MainAlias, FMapper.GetPrimaryKeyColumn]))
+          .Where(ACondition)
+          .BuildSelect);
+      DS := Qry.Open;
+
+      MainPKField := MainPrefix + FMapper.GetPrimaryKeyColumn;
+      ChildPKField := ChildPrefix + ChildMapper.GetPrimaryKeyColumn;
+      while not DS.Eof do
+      begin
+        MainKey := DS.FieldByName(MainPKField).AsString;
+        if not Index.TryGetValue(MainKey, MainObj) then
+        begin
+          MainObj := T.Create;
+          FMapper.MapRowToObject(DS, MainObj, MainPrefix);
+          Result.Add(MainObj);
+          Index.Add(MainKey, MainObj);
+
+          if Assigned(ARelation.Prop) then
+            ARelation.Prop.SetValue(TObject(MainObj), TValue.From<TObjectList<TChild>>(TObjectList<TChild>.Create(True)));
+        end;
+
+        if not DS.FieldByName(ChildPKField).IsNull and Assigned(ARelation.Prop) then
+        begin
+          Item := TChild.Create;
+          ChildMapper.MapRowToObject(DS, Item, ChildPrefix);
+          Children := ARelation.Prop.GetValue(TObject(MainObj)).AsType<TObjectList<TChild>>;
+          Children.Add(Item);
+        end;
+
+        DS.Next;
+      end;
+    finally
+      Builder.Free;
+      Cols.Free;
+      Index.Free;
+    end;
+  finally
+    ChildMapper.Free;
+  end;
+end;
+
+function TWABaseORMRepository<T>.LoadWhereBelongsTo<TParent>(const ACondition: string; const ARelation: TWABaseORMRelationInfo): TObjectList<T>;
+const
+  MainAlias = 'M';
+  ParentAlias = 'P';
+  MainPrefix = 'M_';
+  ParentPrefix = 'P_';
+var
+  ParentMapper: TWABaseORMMapper<TParent>;
+  Builder: TWABaseORMQueryBuilder;
+  Qry: IWABaseORMQuery;
+  DS: TDataSet;
+  Cols: TList<string>;
+  ParentPKField: string;
+  MainObj: T;
+  ParentObj: TParent;
+begin
+  Result := TObjectList<T>.Create(True);
+
+  ParentMapper := TWABaseORMMapper<TParent>.Create;
+  try
+    Cols := TList<string>.Create;
+    Builder := TWABaseORMQueryBuilder.Create(FMapper.GetTableName);
+    try
+      Cols.AddRange(FMapper.GetAliasedSelectColumns(MainAlias, MainPrefix));
+      Cols.AddRange(ParentMapper.GetAliasedSelectColumns(ParentAlias, ParentPrefix));
+
+      // LEFT JOIN: cada registro principal é uma única linha (relacionamento N:1), então,
+      // diferente do HasMany, não há necessidade de agrupar linhas por PK.
+      Qry := FConnection.CreateQuery;
+      Qry.SetSQL(
+        Builder
+          .Alias(MainAlias)
+          .Select(Cols.ToArray)
+          .LeftJoin(ParentMapper.GetTableName, ParentAlias,
+            Format('%s.%s = %s.%s', [ParentAlias, ParentMapper.GetPrimaryKeyColumn, MainAlias, ARelation.ForeignKeyColumn]))
+          .Where(ACondition)
+          .BuildSelect);
+      DS := Qry.Open;
+
+      ParentPKField := ParentPrefix + ParentMapper.GetPrimaryKeyColumn;
+      while not DS.Eof do
+      begin
+        MainObj := T.Create;
+        FMapper.MapRowToObject(DS, MainObj, MainPrefix);
+        Result.Add(MainObj);
+
+        if not DS.FieldByName(ParentPKField).IsNull then
+        begin
+          ParentObj := TParent.Create;
+          ParentMapper.MapRowToObject(DS, ParentObj, ParentPrefix);
+          if Assigned(ARelation.Prop) then
+            ARelation.Prop.SetValue(TObject(MainObj), TValue.From<TParent>(ParentObj))
+          else
+            ParentObj.Free;
+        end;
+
+        DS.Next;
       end;
     finally
       Builder.Free;

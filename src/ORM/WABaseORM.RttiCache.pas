@@ -19,8 +19,9 @@ type
 
   // Metadados de uma propriedade de navegação (HasMany/BelongsTo). O tipo apontado
   // (classe "filha" ou "pai") não é resolvido aqui: quem carrega o relacionamento
-  // (TWABaseORMRepository<T>.LoadHasMany<TChild>/LoadBelongsTo<TParent>) recebe esse
-  // tipo como parâmetro de generics, então só precisamos da coluna de FK e da propriedade.
+  // (TWABaseORMRepository<T>.FindByID<TRelated>/FindAll<TRelated>) recebe esse tipo
+  // como parâmetro de generics e descobre o Kind (HasMany/BelongsTo) a partir do
+  // FindRelation abaixo, então só precisamos da coluna de FK e da propriedade aqui.
   TWABaseORMRelationInfo = record
     Kind: TWABaseORMRelationKind;
     PropertyName: string;
@@ -42,8 +43,10 @@ type
     property HasPrimaryKey: Boolean read FHasPrimaryKey;
     property Relations: TArray<TWABaseORMRelationInfo> read FRelations;
     function FindColumn(const AColumnName: string; out AColumn: TWABaseORMColumnInfo): Boolean;
-    function FindRelation(const APropertyName: string; AKind: TWABaseORMRelationKind;
-      out ARelation: TWABaseORMRelationInfo): Boolean;
+    /// <summary>Localiza o relacionamento (HasMany ou BelongsTo, tanto faz) mapeado na
+    /// propriedade APropertyName. Quem chama descobre o Kind pelo campo ARelation.Kind, em
+    /// vez de precisar saber de antemão se a propriedade é HasMany ou BelongsTo.</summary>
+    function FindRelation(const APropertyName: string; out ARelation: TWABaseORMRelationInfo): Boolean;
   end;
 
   // Cache global de metadados de mapeamento, para não reprocessar RTTI a cada chamada.
@@ -77,13 +80,13 @@ begin
   Result := False;
 end;
 
-function TWABaseORMClassInfo.FindRelation(const APropertyName: string; AKind: TWABaseORMRelationKind;
+function TWABaseORMClassInfo.FindRelation(const APropertyName: string;
   out ARelation: TWABaseORMRelationInfo): Boolean;
 var
   Rel: TWABaseORMRelationInfo;
 begin
   for Rel in FRelations do
-    if (Rel.Kind = AKind) and SameText(Rel.PropertyName, APropertyName) then
+    if SameText(Rel.PropertyName, APropertyName) then
     begin
       ARelation := Rel;
       Exit(True);
