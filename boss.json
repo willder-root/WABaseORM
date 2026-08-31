@@ -1,0 +1,11 @@
+{
+	"name": "wabaseorm",
+	"description": "Pacote Delphi para mapeamento objeto-relacional (ORM) simples, com abstracao de conexao e consultas ao banco via interfaces",
+	"version": "1.0.0",
+	"homepage": "https://github.com/willder-root/WABaseORM",
+	"license": "MIT",
+	"mainsrc": "./src",
+	"browsingpath": "./src/Common;./src/Core;./src/ORM;./src/Providers/FireDAC",
+	"projects": [],
+	"dependencies": {}
+}
