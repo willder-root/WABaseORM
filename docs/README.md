@@ -142,17 +142,22 @@ published
 end;
 ```
 
-Carregando o registro principal já com o relacionamento em **uma única consulta** (`LEFT JOIN`, sem round-trip separado para buscar a entidade e depois o relacionamento):
+Carregando o registro principal já com o relacionamento em **uma única consulta** (`LEFT JOIN`, sem round-trip separado para buscar a entidade e depois o relacionamento). `FindByID<TRelated>`/`FindAll<TRelated>` são sobrecargas de `FindByID`/`FindAll` que detectam sozinhas se a propriedade informada é um `HasMany` ou um `BelongsTo` — quem chama só precisa saber o tipo do lado relacionado e o nome da propriedade, não qual dos dois atributos foi usado:
 
 ```pascal
 // SELECT ... FROM CLIENTES M LEFT JOIN PEDIDOS C ON C.CLIENTE_ID = M.ID WHERE M.ID = :ID
-Cliente := ClienteRepo.FindByIDWithHasMany<TPedido>(1, 'Pedidos'); // já vem com Cliente.Pedidos populado
+Cliente := ClienteRepo.FindByID<TPedido>(1, 'Pedidos'); // "Pedidos" é HasMany -> já vem com Cliente.Pedidos populado
 
 // SELECT ... FROM PEDIDOS M LEFT JOIN CLIENTES P ON P.ID = M.CLIENTE_ID WHERE M.ID = :ID
-Pedido := PedidoRepo.FindByIDWithBelongsTo<TCliente>(100, 'Cliente'); // já vem com Pedido.Cliente populado
+Pedido := PedidoRepo.FindByID<TCliente>(100, 'Cliente'); // "Cliente" é BelongsTo -> já vem com Pedido.Cliente populado
+
+// A mesma detecção automática vale para múltiplos registros via FindAll<TRelated>
+// (alias da tabela principal é "M" — qualifique a condição quando houver ambiguidade):
+Clientes := ClienteRepo.FindAll<TPedido>('M.ID IN (1, 2)', 'Pedidos');
+Pedidos := PedidoRepo.FindAll<TCliente>('M.ID IN (100, 200)', 'Cliente');
 ```
 
-O `LEFT JOIN` garante que o registro principal continua sendo retornado mesmo sem nenhum relacionado (`Cliente.Pedidos` fica com `Count = 0`) ou com a FK vazia/sem correspondência (`Pedido.Cliente` fica `nil`). Os dois métodos retornam `nil` apenas se o próprio registro principal (`AId`) não existir. Quem chama é responsável por liberar o objeto retornado — a propriedade de navegação populada (`TObjectList`/objeto relacionado) é liberada junto se o destructor da entidade cuidar disso (como em qualquer grafo de objetos comum).
+O `LEFT JOIN` garante que o registro principal continua sendo retornado mesmo sem nenhum relacionado (`Cliente.Pedidos` fica com `Count = 0`) ou com a FK vazia/sem correspondência (`Pedido.Cliente` fica `nil`). `FindByID<TRelated>` retorna `nil` apenas se o próprio registro principal (`AId`) não existir; `FindAll<TRelated>` retorna uma lista vazia se nenhum registro casar com `ACondition`. Se `APropertyName` não tiver nenhum `HasMany`/`BelongsTo` mapeado, é levantada `EWABaseORMRelationNotFound`. Quem chama é responsável por liberar o objeto/lista retornado — a propriedade de navegação populada (`TObjectList`/objeto relacionado) é liberada junto se o destructor da entidade cuidar disso (como em qualquer grafo de objetos comum).
 
 ## Convenção de nomes
 
@@ -170,6 +175,6 @@ O projeto `tests/WABaseORM.Tests.dpr` usa [DUnitX](https://github.com/VSoftTechn
 
 ## Limitações conhecidas / próximos passos
 
-- Relacionamentos (`HasMany`/`BelongsTo`) são carregados via `FindByIDWithHasMany<T>`/`FindByIDWithBelongsTo<T>`, que usam `LEFT JOIN` numa única consulta — mas só a partir de uma busca por ID; não há inclusão declarativa de relacionamentos em `FindAll`/`FindWhere` nem suporte a múltiplos relacionamentos na mesma consulta ainda.
+- Relacionamentos (`HasMany`/`BelongsTo`) são carregados via `FindByID<TRelated>`/`FindAll<TRelated>` (o `Kind` é detectado automaticamente), que usam `LEFT JOIN` numa única consulta — mas não há suporte a múltiplos relacionamentos na mesma consulta ainda.
 - `TWABaseORMUnitOfWork` depende de registro manual de "persisters" por classe (`RegisterPersister`); não há descoberta automática ainda.
 - RTTI exige que as propriedades estejam em `published` (ou a classe tenha `{$M+}`).

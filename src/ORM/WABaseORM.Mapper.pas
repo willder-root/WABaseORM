@@ -34,8 +34,7 @@ type
     /// tipos não previstos.</summary>
     procedure SetParamsOnQuery(AObj: T; AQuery: IWABaseORMQuery; AIncludePK: Boolean);
     function GetColumnValue(AObj: T; const AColumnName: string): TValue;
-    function FindRelation(const APropertyName: string; AKind: TWABaseORMRelationKind;
-      out ARelation: TWABaseORMRelationInfo): Boolean;
+    function FindRelation(const APropertyName: string; out ARelation: TWABaseORMRelationInfo): Boolean;
   end;
 
 implementation
@@ -128,10 +127,9 @@ begin
   Result := Col.Prop.GetValue(TObject(AObj));
 end;
 
-function TWABaseORMMapper<T>.FindRelation(const APropertyName: string; AKind: TWABaseORMRelationKind;
-  out ARelation: TWABaseORMRelationInfo): Boolean;
+function TWABaseORMMapper<T>.FindRelation(const APropertyName: string; out ARelation: TWABaseORMRelationInfo): Boolean;
 begin
-  Result := FClassInfo.FindRelation(APropertyName, AKind, ARelation);
+  Result := FClassInfo.FindRelation(APropertyName, ARelation);
 end;
 
 class procedure TWABaseORMMapper<T>.SetQueryParamFromValue(AQuery: IWABaseORMQuery; const AColumnName: string; const AValue: TValue);

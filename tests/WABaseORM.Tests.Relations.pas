@@ -6,7 +6,7 @@ uses
   System.SysUtils, System.Generics.Collections,
   DUnitX.TestFramework,
   FireDAC.Phys.SQLite, FireDAC.Phys.SQLiteDef,
-  WABaseORM.Attributes, WABaseORM.DB.Interfaces,
+  WABaseORM.Attributes, WABaseORM.DB.Interfaces, WABaseORM.Exceptions,
   WABaseORM.FireDAC.ConnectionFactory, WABaseORM.Repository;
 
 type
@@ -65,15 +65,21 @@ type
     procedure TearDown;
 
     [Test]
-    procedure FindByIDWithHasMany_DeveCarregarClienteEFilhosEmUmaUnicaQuery;
+    procedure FindByID_HasMany_DeveCarregarClienteEFilhosEmUmaUnicaQuery;
     [Test]
-    procedure FindByIDWithHasMany_SemFilhos_DeveRetornarClienteComListaVazia;
+    procedure FindByID_HasMany_SemFilhos_DeveRetornarClienteComListaVazia;
     [Test]
-    procedure FindByIDWithHasMany_IdInexistente_DeveRetornarNil;
+    procedure FindByID_HasMany_IdInexistente_DeveRetornarNil;
     [Test]
-    procedure FindByIDWithBelongsTo_DeveCarregarPedidoEClienteEmUmaUnicaQuery;
+    procedure FindByID_BelongsTo_DeveCarregarPedidoEClienteEmUmaUnicaQuery;
     [Test]
-    procedure FindByIDWithBelongsTo_SemRegistroPai_DevePopularApenasOPrincipal;
+    procedure FindByID_BelongsTo_SemRegistroPai_DevePopularApenasOPrincipal;
+    [Test]
+    procedure FindAll_HasMany_DeveCarregarVariosClientesComSeusFilhos;
+    [Test]
+    procedure FindAll_BelongsTo_DeveCarregarVariosPedidosComSeusClientes;
+    [Test]
+    procedure FindByID_PropriedadeSemRelacaoMapeada_DeveLevantarExcecao;
   end;
 
 implementation
@@ -124,7 +130,7 @@ begin
   FConnection := nil;
 end;
 
-procedure TWABaseORMRelationsTests.FindByIDWithHasMany_DeveCarregarClienteEFilhosEmUmaUnicaQuery;
+procedure TWABaseORMRelationsTests.FindByID_HasMany_DeveCarregarClienteEFilhosEmUmaUnicaQuery;
 var
   Cliente: TClienteFixture;
   Pedido: TPedidoFixture;
@@ -159,8 +165,9 @@ begin
   end;
 
   // Uma única chamada = uma única query (LEFT JOIN CLIENTES x PEDIDOS), sem round-trip
-  // separado para buscar o cliente e depois os pedidos.
-  Cliente := FClienteRepo.FindByIDWithHasMany<TPedidoFixture>(1, 'Pedidos');
+  // separado para buscar o cliente e depois os pedidos. O Kind (HasMany) é detectado
+  // automaticamente a partir do atributo da propriedade "Pedidos".
+  Cliente := FClienteRepo.FindByID<TPedidoFixture>(1, 'Pedidos');
   try
     Assert.IsTrue(Assigned(Cliente));
     Assert.AreEqual('Joao', Cliente.Nome);
@@ -171,7 +178,7 @@ begin
   end;
 end;
 
-procedure TWABaseORMRelationsTests.FindByIDWithHasMany_SemFilhos_DeveRetornarClienteComListaVazia;
+procedure TWABaseORMRelationsTests.FindByID_HasMany_SemFilhos_DeveRetornarClienteComListaVazia;
 var
   Cliente: TClienteFixture;
 begin
@@ -186,7 +193,7 @@ begin
 
   // LEFT JOIN: mesmo sem nenhum pedido, o cliente precisa ser retornado (um INNER JOIN
   // teria eliminado a linha do cliente por falta de correspondência).
-  Cliente := FClienteRepo.FindByIDWithHasMany<TPedidoFixture>(2, 'Pedidos');
+  Cliente := FClienteRepo.FindByID<TPedidoFixture>(2, 'Pedidos');
   try
     Assert.IsTrue(Assigned(Cliente));
     Assert.IsTrue(Assigned(Cliente.Pedidos));
@@ -196,15 +203,15 @@ begin
   end;
 end;
 
-procedure TWABaseORMRelationsTests.FindByIDWithHasMany_IdInexistente_DeveRetornarNil;
+procedure TWABaseORMRelationsTests.FindByID_HasMany_IdInexistente_DeveRetornarNil;
 var
   Cliente: TClienteFixture;
 begin
-  Cliente := FClienteRepo.FindByIDWithHasMany<TPedidoFixture>(999, 'Pedidos');
+  Cliente := FClienteRepo.FindByID<TPedidoFixture>(999, 'Pedidos');
   Assert.IsFalse(Assigned(Cliente));
 end;
 
-procedure TWABaseORMRelationsTests.FindByIDWithBelongsTo_DeveCarregarPedidoEClienteEmUmaUnicaQuery;
+procedure TWABaseORMRelationsTests.FindByID_BelongsTo_DeveCarregarPedidoEClienteEmUmaUnicaQuery;
 var
   Cliente: TClienteFixture;
   Pedido: TPedidoFixture;
@@ -228,7 +235,7 @@ begin
     Pedido.Free;
   end;
 
-  Pedido := FPedidoRepo.FindByIDWithBelongsTo<TClienteFixture>(100, 'Cliente');
+  Pedido := FPedidoRepo.FindByID<TClienteFixture>(100, 'Cliente');
   try
     Assert.IsTrue(Assigned(Pedido));
     Assert.AreEqual('Pedido A', Pedido.Descricao);
@@ -240,7 +247,7 @@ begin
   end;
 end;
 
-procedure TWABaseORMRelationsTests.FindByIDWithBelongsTo_SemRegistroPai_DevePopularApenasOPrincipal;
+procedure TWABaseORMRelationsTests.FindByID_BelongsTo_SemRegistroPai_DevePopularApenasOPrincipal;
 var
   Pedido: TPedidoFixture;
 begin
@@ -255,13 +262,145 @@ begin
   end;
 
   // LEFT JOIN: mesmo sem cliente correspondente, o pedido precisa ser retornado.
-  Pedido := FPedidoRepo.FindByIDWithBelongsTo<TClienteFixture>(200, 'Cliente');
+  Pedido := FPedidoRepo.FindByID<TClienteFixture>(200, 'Cliente');
   try
     Assert.IsTrue(Assigned(Pedido));
     Assert.IsFalse(Assigned(Pedido.Cliente));
   finally
     Pedido.Free;
   end;
+end;
+
+procedure TWABaseORMRelationsTests.FindAll_HasMany_DeveCarregarVariosClientesComSeusFilhos;
+var
+  Cliente: TClienteFixture;
+  Pedido: TPedidoFixture;
+  Clientes: TObjectList<TClienteFixture>;
+begin
+  Cliente := TClienteFixture.Create;
+  try
+    Cliente.Id := 1;
+    Cliente.Nome := 'Joao';
+    FClienteRepo.Insert(Cliente);
+  finally
+    Cliente.Free;
+  end;
+
+  Cliente := TClienteFixture.Create;
+  try
+    Cliente.Id := 2;
+    Cliente.Nome := 'Maria';
+    FClienteRepo.Insert(Cliente);
+  finally
+    Cliente.Free;
+  end;
+
+  Pedido := TPedidoFixture.Create;
+  try
+    Pedido.Id := 100;
+    Pedido.ClienteId := 1;
+    Pedido.Descricao := 'Pedido A';
+    FPedidoRepo.Insert(Pedido);
+  finally
+    Pedido.Free;
+  end;
+
+  Pedido := TPedidoFixture.Create;
+  try
+    Pedido.Id := 101;
+    Pedido.ClienteId := 1;
+    Pedido.Descricao := 'Pedido B';
+    FPedidoRepo.Insert(Pedido);
+  finally
+    Pedido.Free;
+  end;
+
+  // Uma única query traz os dois clientes (WHERE ID IN (1, 2)) já com seus pedidos —
+  // Joao com 2 pedidos, Maria com lista vazia (LEFT JOIN não elimina quem não tem filho).
+  Clientes := FClienteRepo.FindAll<TPedidoFixture>('M.ID IN (1, 2)', 'Pedidos');
+  try
+    Assert.AreEqual(2, Clientes.Count);
+
+    for Cliente in Clientes do
+      if Cliente.Id = 1 then
+      begin
+        Assert.AreEqual('Joao', Cliente.Nome);
+        Assert.IsTrue(Assigned(Cliente.Pedidos));
+        Assert.AreEqual(2, Cliente.Pedidos.Count);
+      end
+      else
+      begin
+        Assert.AreEqual('Maria', Cliente.Nome);
+        Assert.IsTrue(Assigned(Cliente.Pedidos));
+        Assert.AreEqual(0, Cliente.Pedidos.Count);
+      end;
+  finally
+    Clientes.Free;
+  end;
+end;
+
+procedure TWABaseORMRelationsTests.FindAll_BelongsTo_DeveCarregarVariosPedidosComSeusClientes;
+var
+  Cliente: TClienteFixture;
+  Pedido: TPedidoFixture;
+  Pedidos: TObjectList<TPedidoFixture>;
+begin
+  Cliente := TClienteFixture.Create;
+  try
+    Cliente.Id := 1;
+    Cliente.Nome := 'Joao';
+    FClienteRepo.Insert(Cliente);
+  finally
+    Cliente.Free;
+  end;
+
+  Pedido := TPedidoFixture.Create;
+  try
+    Pedido.Id := 100;
+    Pedido.ClienteId := 1;
+    Pedido.Descricao := 'Pedido A';
+    FPedidoRepo.Insert(Pedido);
+  finally
+    Pedido.Free;
+  end;
+
+  Pedido := TPedidoFixture.Create;
+  try
+    Pedido.Id := 200;
+    Pedido.ClienteId := 999; // cliente inexistente
+    Pedido.Descricao := 'Pedido orfao';
+    FPedidoRepo.Insert(Pedido);
+  finally
+    Pedido.Free;
+  end;
+
+  // Uma única query traz os dois pedidos já com o Cliente populado (ou nil, quando a FK
+  // não corresponde a nenhum cliente).
+  Pedidos := FPedidoRepo.FindAll<TClienteFixture>('M.ID IN (100, 200)', 'Cliente');
+  try
+    Assert.AreEqual(2, Pedidos.Count);
+
+    for Pedido in Pedidos do
+      if Pedido.Id = 100 then
+      begin
+        Assert.IsTrue(Assigned(Pedido.Cliente));
+        Assert.AreEqual('Joao', Pedido.Cliente.Nome);
+      end
+      else
+        Assert.IsFalse(Assigned(Pedido.Cliente));
+  finally
+    Pedidos.Free;
+  end;
+end;
+
+procedure TWABaseORMRelationsTests.FindByID_PropriedadeSemRelacaoMapeada_DeveLevantarExcecao;
+begin
+  Assert.WillRaise(
+    procedure
+    begin
+      FClienteRepo.FindByID<TPedidoFixture>(1, 'Nome'); // "Nome" existe como coluna, não como relação
+    end,
+    EWABaseORMRelationNotFound);
 end;
 
 initialization
