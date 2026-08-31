@@ -9,7 +9,8 @@ uses
   DUnitX.Loggers.Xml.NUnit,
   WABaseORM.Tests.Mapper in 'WABaseORM.Tests.Mapper.pas',
   WABaseORM.Tests.Repository in 'WABaseORM.Tests.Repository.pas',
-  WABaseORM.Tests.FireDACConnection in 'WABaseORM.Tests.FireDACConnection.pas';
+  WABaseORM.Tests.FireDACConnection in 'WABaseORM.Tests.FireDACConnection.pas',
+  WABaseORM.Tests.Relations in 'WABaseORM.Tests.Relations.pas';
 
 var
   Runner: ITestRunner;

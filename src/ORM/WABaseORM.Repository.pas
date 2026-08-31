@@ -5,7 +5,7 @@ interface
 uses
   System.SysUtils, System.Rtti, Data.DB, System.Generics.Collections,
   WABaseORM.DB.Interfaces, WABaseORM.Interfaces,
-  WABaseORM.Mapper, WABaseORM.QueryBuilder, WABaseORM.Exceptions;
+  WABaseORM.Mapper, WABaseORM.QueryBuilder, WABaseORM.Exceptions, WABaseORM.RttiCache;
 
 type
   TWABaseORMRepository<T: class, constructor> = class(TInterfacedObject, IWABaseORMRepository<T>)
@@ -21,6 +21,15 @@ type
     procedure Insert(AObj: T);
     procedure Update(AObj: T);
     procedure Delete(const AId: Integer);
+    /// <summary>Carrega o lado "muitos" de um relacionamento 1:N declarado em AObj via
+    /// [WABaseORMHasManyAttribute(...)] na propriedade APropertyName, populando essa
+    /// propriedade (TObjectList&lt;TChild&gt;) e também retornando a lista carregada.</summary>
+    function LoadHasMany<TChild: class, constructor>(AObj: T; const APropertyName: string): TObjectList<TChild>;
+    /// <summary>Carrega o lado "um" de um relacionamento N:1 declarado em AObj via
+    /// [WABaseORMBelongsToAttribute(...)] na propriedade APropertyName, populando essa
+    /// propriedade (TParent) e também retornando o registro carregado (ou nil se a FK
+    /// estiver vazia ou o registro pai não existir).</summary>
+    function LoadBelongsTo<TParent: class, constructor>(AObj: T; const APropertyName: string): TParent;
   end;
 
 implementation
@@ -182,6 +191,87 @@ begin
     Qry.ExecSQL;
   finally
     Builder.Free;
+  end;
+end;
+
+function TWABaseORMRepository<T>.LoadHasMany<TChild>(AObj: T; const APropertyName: string): TObjectList<TChild>;
+var
+  Relation: TWABaseORMRelationInfo;
+  ChildMapper: TWABaseORMMapper<TChild>;
+  Builder: TWABaseORMQueryBuilder;
+  Qry: IWABaseORMQuery;
+  DS: TDataSet;
+  Item: TChild;
+begin
+  if not FMapper.FindRelation(APropertyName, rkHasMany, Relation) then
+    raise EWABaseORMRelationNotFound.Create(T.ClassName, APropertyName);
+
+  Result := TObjectList<TChild>.Create(True);
+  ChildMapper := TWABaseORMMapper<TChild>.Create;
+  try
+    Builder := TWABaseORMQueryBuilder.Create(ChildMapper.GetTableName);
+    try
+      Qry := FConnection.CreateQuery;
+      Qry.SetSQL(Builder.SelectAll.Where(Relation.ForeignKeyColumn + ' = :FK').BuildSelect);
+      Qry.SetParam('FK', FMapper.GetPrimaryKeyValue(AObj).AsVariant);
+      DS := Qry.Open;
+      while not DS.Eof do
+      begin
+        Item := TChild.Create;
+        ChildMapper.MapRowToObject(DS, Item);
+        Result.Add(Item);
+        DS.Next;
+      end;
+    finally
+      Builder.Free;
+    end;
+
+    if Assigned(Relation.Prop) then
+      Relation.Prop.SetValue(TObject(AObj), TValue.From<TObjectList<TChild>>(Result));
+  finally
+    ChildMapper.Free;
+  end;
+end;
+
+function TWABaseORMRepository<T>.LoadBelongsTo<TParent>(AObj: T; const APropertyName: string): TParent;
+var
+  Relation: TWABaseORMRelationInfo;
+  ParentMapper: TWABaseORMMapper<TParent>;
+  Builder: TWABaseORMQueryBuilder;
+  Qry: IWABaseORMQuery;
+  DS: TDataSet;
+  FKValue: TValue;
+begin
+  Result := nil;
+
+  if not FMapper.FindRelation(APropertyName, rkBelongsTo, Relation) then
+    raise EWABaseORMRelationNotFound.Create(T.ClassName, APropertyName);
+
+  FKValue := FMapper.GetColumnValue(AObj, Relation.ForeignKeyColumn);
+  if FKValue.IsEmpty then
+    Exit(nil);
+
+  ParentMapper := TWABaseORMMapper<TParent>.Create;
+  try
+    Builder := TWABaseORMQueryBuilder.Create(ParentMapper.GetTableName);
+    try
+      Qry := FConnection.CreateQuery;
+      Qry.SetSQL(Builder.SelectAll.Where(ParentMapper.GetPrimaryKeyColumn + ' = :PK').BuildSelect);
+      Qry.SetParam('PK', FKValue.AsVariant);
+      DS := Qry.Open;
+      if not DS.Eof then
+      begin
+        Result := TParent.Create;
+        ParentMapper.MapRowToObject(DS, Result);
+      end;
+    finally
+      Builder.Free;
+    end;
+
+    if Assigned(Relation.Prop) and Assigned(Result) then
+      Relation.Prop.SetValue(TObject(AObj), TValue.From<TParent>(Result));
+  finally
+    ParentMapper.Free;
   end;
 end;
 

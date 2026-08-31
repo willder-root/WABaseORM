@@ -97,6 +97,54 @@ end;
 
 > As propriedades precisam estar na seção `published` para que a RTTI as enumere em tempo de execução.
 
+## Relacionamentos (HasMany / BelongsTo)
+
+```pascal
+[WABaseORMTableAttribute('CLIENTES')]
+TCliente = class
+private
+  FId: Integer;
+  FNome: string;
+  FPedidos: TObjectList<TPedido>;
+published
+  [WABaseORMColumnAttribute('ID', True)]
+  property Id: Integer read FId write FId;
+  [WABaseORMColumnAttribute('NOME')]
+  property Nome: string read FNome write FNome;
+  // "Pedidos" é o lado N: cada TPedido referencia este Cliente via CLIENTE_ID.
+  [WABaseORMHasManyAttribute('CLIENTE_ID')]
+  property Pedidos: TObjectList<TPedido> read FPedidos write FPedidos;
+end;
+
+[WABaseORMTableAttribute('PEDIDOS')]
+TPedido = class
+private
+  FId: Integer;
+  FClienteId: Integer;
+  FCliente: TCliente;
+published
+  [WABaseORMColumnAttribute('ID', True)]
+  property Id: Integer read FId write FId;
+  [WABaseORMColumnAttribute('CLIENTE_ID')]
+  property ClienteId: Integer read FClienteId write FClienteId;
+  // "Cliente" é o lado 1: aponta para o Cliente dono deste Pedido.
+  [WABaseORMBelongsToAttribute('CLIENTE_ID')]
+  property Cliente: TCliente read FCliente write FCliente;
+end;
+```
+
+Carregando os relacionamentos a partir do repositório (uma consulta extra por chamada, filtrando pela FK declarada no atributo):
+
+```pascal
+Cliente := ClienteRepo.FindByID(1);
+Pedidos := ClienteRepo.LoadHasMany<TPedido>(Cliente, 'Pedidos'); // também popula Cliente.Pedidos
+
+Pedido := PedidoRepo.FindByID(100);
+ClientePai := PedidoRepo.LoadBelongsTo<TCliente>(Pedido, 'Cliente'); // também popula Pedido.Cliente
+```
+
+`LoadBelongsTo<T>` retorna `nil` se a FK estiver vazia/default ou se não houver registro pai com aquela PK. Ambos os métodos são responsabilidade de quem chama liberar (`TObjectList`/objeto retornado), assim como qualquer outro resultado de `Find*`.
+
 ## Convenção de nomes
 
 | Camada | Padrão | Exemplo |
@@ -113,6 +161,6 @@ O projeto `tests/WABaseORM.Tests.dpr` usa [DUnitX](https://github.com/VSoftTechn
 
 ## Limitações conhecidas / próximos passos
 
-- Sem suporte a relacionamentos (1:N, N:1) ainda — cada entidade é mapeada isoladamente.
+- Relacionamentos (`HasMany`/`BelongsTo`) são carregados sob demanda via `LoadHasMany<T>`/`LoadBelongsTo<T>` (uma query separada por chamada) — não há eager loading automático via JOIN nem inclusão declarativa em `FindAll`/`FindWhere` ainda.
 - `TWABaseORMUnitOfWork` depende de registro manual de "persisters" por classe (`RegisterPersister`); não há descoberta automática ainda.
 - RTTI exige que as propriedades estejam em `published` (ou a classe tenha `{$M+}`).

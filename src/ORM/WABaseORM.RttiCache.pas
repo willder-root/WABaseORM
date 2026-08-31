@@ -15,17 +15,35 @@ type
     IsAutoInc: Boolean;
   end;
 
+  TWABaseORMRelationKind = (rkHasMany, rkBelongsTo);
+
+  // Metadados de uma propriedade de navegação (HasMany/BelongsTo). O tipo apontado
+  // (classe "filha" ou "pai") não é resolvido aqui: quem carrega o relacionamento
+  // (TWABaseORMRepository<T>.LoadHasMany<TChild>/LoadBelongsTo<TParent>) recebe esse
+  // tipo como parâmetro de generics, então só precisamos da coluna de FK e da propriedade.
+  TWABaseORMRelationInfo = record
+    Kind: TWABaseORMRelationKind;
+    PropertyName: string;
+    Prop: TRttiProperty;
+    ForeignKeyColumn: string;
+  end;
+
   TWABaseORMClassInfo = class
   private
     FTableName: string;
     FColumns: TArray<TWABaseORMColumnInfo>;
     FPrimaryKey: TWABaseORMColumnInfo;
     FHasPrimaryKey: Boolean;
+    FRelations: TArray<TWABaseORMRelationInfo>;
   public
     property TableName: string read FTableName;
     property Columns: TArray<TWABaseORMColumnInfo> read FColumns;
     property PrimaryKey: TWABaseORMColumnInfo read FPrimaryKey;
     property HasPrimaryKey: Boolean read FHasPrimaryKey;
+    property Relations: TArray<TWABaseORMRelationInfo> read FRelations;
+    function FindColumn(const AColumnName: string; out AColumn: TWABaseORMColumnInfo): Boolean;
+    function FindRelation(const APropertyName: string; AKind: TWABaseORMRelationKind;
+      out ARelation: TWABaseORMRelationInfo): Boolean;
   end;
 
   // Cache global de metadados de mapeamento, para não reprocessar RTTI a cada chamada.
@@ -44,6 +62,35 @@ type
 
 implementation
 
+{ TWABaseORMClassInfo }
+
+function TWABaseORMClassInfo.FindColumn(const AColumnName: string; out AColumn: TWABaseORMColumnInfo): Boolean;
+var
+  Col: TWABaseORMColumnInfo;
+begin
+  for Col in FColumns do
+    if SameText(Col.ColumnName, AColumnName) then
+    begin
+      AColumn := Col;
+      Exit(True);
+    end;
+  Result := False;
+end;
+
+function TWABaseORMClassInfo.FindRelation(const APropertyName: string; AKind: TWABaseORMRelationKind;
+  out ARelation: TWABaseORMRelationInfo): Boolean;
+var
+  Rel: TWABaseORMRelationInfo;
+begin
+  for Rel in FRelations do
+    if (Rel.Kind = AKind) and SameText(Rel.PropertyName, APropertyName) then
+    begin
+      ARelation := Rel;
+      Exit(True);
+    end;
+  Result := False;
+end;
+
 { TWABaseORMRttiCache }
 
 class function TWABaseORMRttiCache.BuildClassInfo(AClass: TClass): TWABaseORMClassInfo;
@@ -53,6 +100,8 @@ var
   Attr: TCustomAttribute;
   Columns: TList<TWABaseORMColumnInfo>;
   Col: TWABaseORMColumnInfo;
+  Relations: TList<TWABaseORMRelationInfo>;
+  Rel: TWABaseORMRelationInfo;
   TableFound: Boolean;
 begin
   Result := TWABaseORMClassInfo.Create;
@@ -71,9 +120,11 @@ begin
     raise EWABaseORMTableNotMapped.Create(AClass.ClassName);
 
   Columns := TList<TWABaseORMColumnInfo>.Create;
+  Relations := TList<TWABaseORMRelationInfo>.Create;
   try
     for Prop in RttiType.GetProperties do
       for Attr in Prop.GetAttributes do
+      begin
         if Attr is WABaseORMColumnAttribute then
         begin
           Col.Prop := Prop;
@@ -87,11 +138,30 @@ begin
             Result.FPrimaryKey := Col;
             Result.FHasPrimaryKey := True;
           end;
+        end
+        else if Attr is WABaseORMHasManyAttribute then
+        begin
+          Rel.Kind := rkHasMany;
+          Rel.PropertyName := Prop.Name;
+          Rel.Prop := Prop;
+          Rel.ForeignKeyColumn := WABaseORMHasManyAttribute(Attr).ForeignKeyColumn;
+          Relations.Add(Rel);
+        end
+        else if Attr is WABaseORMBelongsToAttribute then
+        begin
+          Rel.Kind := rkBelongsTo;
+          Rel.PropertyName := Prop.Name;
+          Rel.Prop := Prop;
+          Rel.ForeignKeyColumn := WABaseORMBelongsToAttribute(Attr).ForeignKeyColumn;
+          Relations.Add(Rel);
         end;
+      end;
 
     Result.FColumns := Columns.ToArray;
+    Result.FRelations := Relations.ToArray;
   finally
     Columns.Free;
+    Relations.Free;
   end;
 end;
 
