@@ -43,6 +43,16 @@ WABaseORM/
 1. Abra `WABaseORM.dpk` (na raiz do repositório) e compile/instale. Ele já contém todas as units de `src/Core`, `src/ORM`, `src/Common` e `src/Providers/FireDAC`, além dos `requires` de `FireDAC`/`FireDACCommonDriver`/`FireDACCommon`/`FireDACIBDriver` — não é necessário compilar nenhum outro pacote separadamente.
 2. Adicione o caminho de `src/Core`, `src/ORM`, `src/Common` e `src/Providers/FireDAC` em **Library Path** (ou referencie o `.dpk` diretamente no seu projeto).
 
+## Instalação via Boss
+
+O projeto tem um `boss.json` na raiz, então também pode ser adicionado como dependência via [Boss](https://github.com/HashLoad/boss):
+
+```
+boss install github.com/willder-root/WABaseORM
+```
+
+O Boss usa `mainsrc`/`browsingpath` do `boss.json` para adicionar `src/Core`, `src/ORM`, `src/Common` e `src/Providers/FireDAC` ao Library Path do seu projeto automaticamente.
+
 ## Uso básico
 
 ```pascal
