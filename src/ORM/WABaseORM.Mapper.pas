@@ -24,6 +24,9 @@ type
     /// string, Double, Currency, TDateTime, Boolean), com Variant apenas como fallback para
     /// tipos não previstos.</summary>
     procedure SetParamsOnQuery(AObj: T; AQuery: IWABaseORMQuery; AIncludePK: Boolean);
+    function GetColumnValue(AObj: T; const AColumnName: string): TValue;
+    function FindRelation(const APropertyName: string; AKind: TWABaseORMRelationKind;
+      out ARelation: TWABaseORMRelationInfo): Boolean;
   end;
 
 implementation
@@ -81,6 +84,21 @@ begin
   if not FClassInfo.HasPrimaryKey then
     raise EWABaseORMPrimaryKeyNotFound.Create(T.ClassName);
   Result := FClassInfo.PrimaryKey.Prop.GetValue(TObject(AObj));
+end;
+
+function TWABaseORMMapper<T>.GetColumnValue(AObj: T; const AColumnName: string): TValue;
+var
+  Col: TWABaseORMColumnInfo;
+begin
+  if not FClassInfo.FindColumn(AColumnName, Col) then
+    raise EWABaseORMException.CreateFmt('A classe "%s" não possui a coluna "%s" mapeada.', [T.ClassName, AColumnName]);
+  Result := Col.Prop.GetValue(TObject(AObj));
+end;
+
+function TWABaseORMMapper<T>.FindRelation(const APropertyName: string; AKind: TWABaseORMRelationKind;
+  out ARelation: TWABaseORMRelationInfo): Boolean;
+begin
+  Result := FClassInfo.FindRelation(APropertyName, AKind, ARelation);
 end;
 
 class procedure TWABaseORMMapper<T>.SetQueryParamFromValue(AQuery: IWABaseORMQuery; const AColumnName: string; const AValue: TValue);

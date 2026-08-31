@@ -27,6 +27,11 @@ type
 
   EWABaseORMTransactionError = class(EWABaseORMException);
 
+  EWABaseORMRelationNotFound = class(EWABaseORMException)
+  public
+    constructor Create(const AClassName, APropertyName: string);
+  end;
+
 implementation
 
 { EWABaseORMTableNotMapped }
@@ -48,6 +53,13 @@ end;
 constructor EWABaseORMRecordNotFound.Create(const ATableName: string; const AId: Integer);
 begin
   inherited CreateFmt('Registro não encontrado na tabela "%s" com ID = %d.', [ATableName, AId]);
+end;
+
+{ EWABaseORMRelationNotFound }
+
+constructor EWABaseORMRelationNotFound.Create(const AClassName, APropertyName: string);
+begin
+  inherited CreateFmt('A classe "%s" não possui nenhum relacionamento (HasMany/BelongsTo) mapeado na propriedade "%s".', [AClassName, APropertyName]);
 end;
 
 end.
