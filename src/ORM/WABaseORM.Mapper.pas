@@ -16,7 +16,16 @@ type
     constructor Create;
     function GetTableName: string;
     function GetPrimaryKeyColumn: string;
-    procedure MapRowToObject(ADataSet: TDataSet; AObj: T);
+    procedure MapRowToObject(ADataSet: TDataSet; AObj: T); overload;
+    /// <summary>Igual ao overload acima, mas lê os campos de ADataSet com o prefixo
+    /// AColumnPrefix (ex: "P_ID" em vez de "ID"). Usado para popular objetos a partir de
+    /// uma linha de um SELECT com JOIN, onde as colunas de cada tabela são reescritas com
+    /// alias (ver GetAliasedSelectColumns) para não colidir entre si.</summary>
+    procedure MapRowToObject(ADataSet: TDataSet; AObj: T; const AColumnPrefix: string); overload;
+    /// <summary>Retorna as colunas desta classe qualificadas com o alias de tabela e
+    /// renomeadas com AColumnPrefix (ex: "P.ID AS P_ID"), para montar um SELECT com JOIN
+    /// entre múltiplas tabelas sem colisão de nomes de coluna.</summary>
+    function GetAliasedSelectColumns(const ATableAlias, AColumnPrefix: string): TArray<string>;
     function MapObjectToParams(AObj: T; AIncludePK: Boolean): TArray<string>;
     function GetPrimaryKeyValue(AObj: T): TValue;
     /// <summary>Define os parâmetros de AQuery a partir das propriedades mapeadas de AObj,
@@ -52,12 +61,36 @@ begin
 end;
 
 procedure TWABaseORMMapper<T>.MapRowToObject(ADataSet: TDataSet; AObj: T);
+begin
+  MapRowToObject(ADataSet, AObj, '');
+end;
+
+procedure TWABaseORMMapper<T>.MapRowToObject(ADataSet: TDataSet; AObj: T; const AColumnPrefix: string);
 var
   Col: TWABaseORMColumnInfo;
+  FieldName: string;
 begin
   for Col in FClassInfo.Columns do
-    if ADataSet.FindField(Col.ColumnName) <> nil then
-      Col.Prop.SetValue(TObject(AObj), TValue.FromVariant(ADataSet.FieldByName(Col.ColumnName).Value));
+  begin
+    FieldName := AColumnPrefix + Col.ColumnName;
+    if ADataSet.FindField(FieldName) <> nil then
+      Col.Prop.SetValue(TObject(AObj), TValue.FromVariant(ADataSet.FieldByName(FieldName).Value));
+  end;
+end;
+
+function TWABaseORMMapper<T>.GetAliasedSelectColumns(const ATableAlias, AColumnPrefix: string): TArray<string>;
+var
+  Col: TWABaseORMColumnInfo;
+  List: TList<string>;
+begin
+  List := TList<string>.Create;
+  try
+    for Col in FClassInfo.Columns do
+      List.Add(Format('%s.%s AS %s%s', [ATableAlias, Col.ColumnName, AColumnPrefix, Col.ColumnName]));
+    Result := List.ToArray;
+  finally
+    List.Free;
+  end;
 end;
 
 function TWABaseORMMapper<T>.MapObjectToParams(AObj: T; AIncludePK: Boolean): TArray<string>;

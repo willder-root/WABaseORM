@@ -33,16 +33,15 @@ WABaseORM/
 │       └── WABaseORM.Utils.pas
 │
 ├── tests/                        Testes DUnitX
-├── packages/                     Pacotes .dpk (Core e FireDAC separados)
 ├── examples/Demo/                Projeto de demonstração de uso
+├── WABaseORM.dpk                 Pacote único (design-time) com todas as units acima
 └── docs/README.md
 ```
 
 ## Instalação (design-time)
 
-1. Abra `packages/WABaseORM.Core.dpk` e compile.
-2. Abra `packages/WABaseORM.FireDAC.dpk` e compile (depende do Core e dos pacotes `FireDAC*` da própria instalação do Delphi — ajuste os nomes em `requires` conforme a versão da sua IDE, caso o compilador acuse pacote não encontrado).
-3. Adicione o caminho de `src/Core`, `src/ORM`, `src/Common` e `src/Providers/FireDAC` em **Library Path** (ou referencie os `.dpk` diretamente no seu projeto).
+1. Abra `WABaseORM.dpk` (na raiz do repositório) e compile/instale. Ele já contém todas as units de `src/Core`, `src/ORM`, `src/Common` e `src/Providers/FireDAC`, além dos `requires` de `FireDAC`/`FireDACCommonDriver`/`FireDACCommon`/`FireDACIBDriver` — não é necessário compilar nenhum outro pacote separadamente.
+2. Adicione o caminho de `src/Core`, `src/ORM`, `src/Common` e `src/Providers/FireDAC` em **Library Path** (ou referencie o `.dpk` diretamente no seu projeto).
 
 ## Uso básico
 
@@ -133,17 +132,17 @@ published
 end;
 ```
 
-Carregando os relacionamentos a partir do repositório (uma consulta extra por chamada, filtrando pela FK declarada no atributo):
+Carregando o registro principal já com o relacionamento em **uma única consulta** (`LEFT JOIN`, sem round-trip separado para buscar a entidade e depois o relacionamento):
 
 ```pascal
-Cliente := ClienteRepo.FindByID(1);
-Pedidos := ClienteRepo.LoadHasMany<TPedido>(Cliente, 'Pedidos'); // também popula Cliente.Pedidos
+// SELECT ... FROM CLIENTES M LEFT JOIN PEDIDOS C ON C.CLIENTE_ID = M.ID WHERE M.ID = :ID
+Cliente := ClienteRepo.FindByIDWithHasMany<TPedido>(1, 'Pedidos'); // já vem com Cliente.Pedidos populado
 
-Pedido := PedidoRepo.FindByID(100);
-ClientePai := PedidoRepo.LoadBelongsTo<TCliente>(Pedido, 'Cliente'); // também popula Pedido.Cliente
+// SELECT ... FROM PEDIDOS M LEFT JOIN CLIENTES P ON P.ID = M.CLIENTE_ID WHERE M.ID = :ID
+Pedido := PedidoRepo.FindByIDWithBelongsTo<TCliente>(100, 'Cliente'); // já vem com Pedido.Cliente populado
 ```
 
-`LoadBelongsTo<T>` retorna `nil` se a FK estiver vazia/default ou se não houver registro pai com aquela PK. Ambos os métodos são responsabilidade de quem chama liberar (`TObjectList`/objeto retornado), assim como qualquer outro resultado de `Find*`.
+O `LEFT JOIN` garante que o registro principal continua sendo retornado mesmo sem nenhum relacionado (`Cliente.Pedidos` fica com `Count = 0`) ou com a FK vazia/sem correspondência (`Pedido.Cliente` fica `nil`). Os dois métodos retornam `nil` apenas se o próprio registro principal (`AId`) não existir. Quem chama é responsável por liberar o objeto retornado — a propriedade de navegação populada (`TObjectList`/objeto relacionado) é liberada junto se o destructor da entidade cuidar disso (como em qualquer grafo de objetos comum).
 
 ## Convenção de nomes
 
@@ -153,7 +152,7 @@ ClientePai := PedidoRepo.LoadBelongsTo<TCliente>(Pedido, 'Cliente'); // também 
 | Provider FireDAC | `WABaseORM.FireDAC.<Componente>.pas` | `WABaseORM.FireDAC.Connection.pas` |
 | ORM/mapeamento | `WABaseORM.<Funcionalidade>.pas` | `WABaseORM.Repository.pas` |
 | Testes | `WABaseORM.Tests.<Alvo>.pas` | `WABaseORM.Tests.Mapper.pas` |
-| Pacotes .dpk | `WABaseORM.<Módulo>.dpk` | `WABaseORM.Core.dpk` |
+| Pacote .dpk | `WABaseORM.dpk` (único, na raiz) | `WABaseORM.dpk` |
 
 ## Rodando os testes
 
@@ -161,6 +160,6 @@ O projeto `tests/WABaseORM.Tests.dpr` usa [DUnitX](https://github.com/VSoftTechn
 
 ## Limitações conhecidas / próximos passos
 
-- Relacionamentos (`HasMany`/`BelongsTo`) são carregados sob demanda via `LoadHasMany<T>`/`LoadBelongsTo<T>` (uma query separada por chamada) — não há eager loading automático via JOIN nem inclusão declarativa em `FindAll`/`FindWhere` ainda.
+- Relacionamentos (`HasMany`/`BelongsTo`) são carregados via `FindByIDWithHasMany<T>`/`FindByIDWithBelongsTo<T>`, que usam `LEFT JOIN` numa única consulta — mas só a partir de uma busca por ID; não há inclusão declarativa de relacionamentos em `FindAll`/`FindWhere` nem suporte a múltiplos relacionamentos na mesma consulta ainda.
 - `TWABaseORMUnitOfWork` depende de registro manual de "persisters" por classe (`RegisterPersister`); não há descoberta automática ainda.
 - RTTI exige que as propriedades estejam em `published` (ou a classe tenha `{$M+}`).

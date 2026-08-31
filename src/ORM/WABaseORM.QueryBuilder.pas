@@ -9,7 +9,9 @@ type
   TWABaseORMQueryBuilder = class
   private
     FTableName: string;
+    FTableAlias: string;
     FColumns: TList<string>;
+    FJoins: TList<string>;
     FConditions: TList<string>;
     FOrderBy: string;
   public
@@ -17,6 +19,11 @@ type
     destructor Destroy; override;
     function Select(const AColumns: array of string): TWABaseORMQueryBuilder;
     function SelectAll: TWABaseORMQueryBuilder;
+    function Alias(const ATableAlias: string): TWABaseORMQueryBuilder;
+    /// <summary>Adiciona "LEFT JOIN AJoinTable AJoinAlias ON ACondition" à consulta.
+    /// LEFT JOIN (em vez de INNER) garante que a linha do lado "principal" da junção
+    /// não desapareça quando não há registro relacionado (ex: HasMany sem filhos).</summary>
+    function LeftJoin(const AJoinTable, AJoinAlias, ACondition: string): TWABaseORMQueryBuilder;
     function Where(const ACondition: string): TWABaseORMQueryBuilder;
     function OrderBy(const AColumns: string): TWABaseORMQueryBuilder;
     function BuildSelect: string;
@@ -33,7 +40,9 @@ constructor TWABaseORMQueryBuilder.Create(const ATableName: string);
 begin
   inherited Create;
   FTableName := ATableName;
+  FTableAlias := '';
   FColumns := TList<string>.Create;
+  FJoins := TList<string>.Create;
   FConditions := TList<string>.Create;
   FOrderBy := '';
 end;
@@ -41,6 +50,7 @@ end;
 destructor TWABaseORMQueryBuilder.Destroy;
 begin
   FColumns.Free;
+  FJoins.Free;
   FConditions.Free;
   inherited;
 end;
@@ -59,6 +69,18 @@ function TWABaseORMQueryBuilder.SelectAll: TWABaseORMQueryBuilder;
 begin
   FColumns.Clear;
   FColumns.Add('*');
+  Result := Self;
+end;
+
+function TWABaseORMQueryBuilder.Alias(const ATableAlias: string): TWABaseORMQueryBuilder;
+begin
+  FTableAlias := ATableAlias;
+  Result := Self;
+end;
+
+function TWABaseORMQueryBuilder.LeftJoin(const AJoinTable, AJoinAlias, ACondition: string): TWABaseORMQueryBuilder;
+begin
+  FJoins.Add(Format('LEFT JOIN %s %s ON %s', [AJoinTable, AJoinAlias, ACondition]));
   Result := Self;
 end;
 
@@ -83,7 +105,13 @@ begin
   else
     Cols := String.Join(', ', FColumns.ToArray);
 
-  Result := Format('SELECT %s FROM %s', [Cols, FTableName]);
+  if FTableAlias <> '' then
+    Result := Format('SELECT %s FROM %s %s', [Cols, FTableName, FTableAlias])
+  else
+    Result := Format('SELECT %s FROM %s', [Cols, FTableName]);
+
+  if FJoins.Count > 0 then
+    Result := Result + ' ' + String.Join(' ', FJoins.ToArray);
 
   if FConditions.Count > 0 then
     Result := Result + ' WHERE ' + String.Join(' AND ', FConditions.ToArray);
